@@ -1,0 +1,42 @@
+npm install
+npm install axios
+ cd C:\Users\dsaiv\OneDrive\Desktop\StaffArc\vinsaraa\frontend\vinsara-collections
+ npm install @react-oauth/google
+ -Step 1: Update Google Cloud Console
+Go to the Google Cloud Console.
+
+Navigate to APIs & Services > Credentials.
+
+Click on the OAuth 2.0 Client ID you created earlier.
+
+Look for Authorized JavaScript origins.
+
+Add: http://localhost:8080 (and http://127.0.0.1:8080 just to be safe).
+
+Look for Authorized redirect URIs.
+
+Add: http://localhost:8080 (and http://127.0.0.1:8080).
+
+Click Save.
+
+Note: It may take 5 minutes for Google to update.
+---------------
+Authorised JavaScript origins
+For use with requests from a browser
+URIs 1 
+http://localhost:3000
+URIs 2 
+http://localhost:8080
+URIs 3 
+http://127.0.0.1:8080
+
+----------
+Authorised redirect URIs
+For use with requests from a web server
+URIs 1 
+http://localhost:3000
+URIs 2 
+http://localhost:8080
+URIs 3 
+http://127.0.0.1:8080
+
