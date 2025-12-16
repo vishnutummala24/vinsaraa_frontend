@@ -60,3 +60,41 @@ export const authService = {
     return response.data;
   }
 };
+// --- NEW: STORE SERVICE ---
+export const storeService = {
+  // 1. Get All Products 
+  // FIXED: Added '/store' prefix
+  getProducts: async (params?: { category?: string; is_new?: boolean }) => {
+    const response = await api.get('/store/products/', { params }); 
+    return response.data;
+  },
+
+  // 2. Get Single Product by Slug
+  // FIXED: Added '/store' prefix
+  getProductBySlug: async (slug: string) => {
+    const response = await api.get(`/store/products/${slug}/`);
+    return response.data;
+  },
+
+  // 3. Get All Categories
+  // FIXED: Added '/store' prefix
+  getCategories: async () => {
+    const response = await api.get('/store/categories/');
+    return response.data;
+  },
+
+  // 4. Validate Coupon
+  validateCoupon: async (code: string, orderTotal: number) => {
+    const response = await api.post('/store/validate-coupon/', { 
+        code, 
+        order_total: orderTotal 
+    });
+    return response.data;
+  },
+
+  // 5. Get Site Config
+  getSiteConfig: async () => {
+    const response = await api.get('/store/config/');
+    return response.data;
+  }
+};
