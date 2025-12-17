@@ -24,7 +24,21 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    return Promise.reject(error.response ? error.response.data : error);
+    // Normalize error object
+    const resp = error?.response;
+
+    // If backend says token is invalid/expired, clear it so app can behave as guest
+    if (resp && resp.status === 401) {
+      localStorage.removeItem('userToken');
+      // You can also clear any cached user profile here if you store it
+      // localStorage.removeItem('user');
+
+      // Optional: force a reload so public endpoints work as guest
+      // and the UI updates logged-out state.
+      window.location.reload();
+    }
+
+    return Promise.reject(resp ? resp.data : error);
   }
 );
 
@@ -97,4 +111,23 @@ export const storeService = {
     const response = await api.get('/store/config/');
     return response.data;
   }
+};
+
+// --- NEW: ORDER / PAYMENT SERVICE ---
+export const orderService = {
+  // Create order and get Razorpay order details
+  createOrder: async (data: any) => {
+    const response = await api.post('/orders/checkout/', data);
+    return response.data;
+  },
+
+  // Verify payment after Razorpay success
+  verifyPayment: async (data: {
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+  }) => {
+    const response = await api.post('/payments/verify/', data);
+    return response.data;
+  },
 };

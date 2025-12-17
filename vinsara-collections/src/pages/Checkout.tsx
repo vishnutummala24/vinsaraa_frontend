@@ -2,11 +2,11 @@ import { useState, useEffect, useMemo } from "react";
 import { useCart } from "@/pages/CartContext";
 import { ChevronDown, Info, Loader2 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
-import { storeService } from "@/services/api";
+import { storeService, orderService } from "@/services/api";
 import { toast } from "sonner";
 
 const Checkout = () => {
-  const { cartItems, cartTotal } = useCart(); // cartTotal here is SUBTOTAL
+  const { cartItems, cartTotal, clearCart } = useCart(); // cartTotal here is SUBTOTAL
   const navigate = useNavigate();
 
   // --- STATE MANAGEMENT ---
@@ -22,6 +22,7 @@ const Checkout = () => {
   const [isValidatingCoupon, setIsValidatingCoupon] = useState(false);
 
   const [saveInfo, setSaveInfo] = useState(false);
+  const [isPaying, setIsPaying] = useState(false);
 
   const [formData, setFormData] = useState({
     email: "",
@@ -119,26 +120,88 @@ const Checkout = () => {
     }
   };
 
-  const handlePayment = () => {
+  const handlePayment = async () => {
+    if (isPaying) return;
     if (cartItems.length === 0) {
       toast.error("Your cart is empty");
       return;
     }
-    
+    const token = localStorage.getItem("userToken");
+    if (!token) {
+      toast.error("Please sign in to complete payment");
+      navigate("/user");
+      return;
+    }
     if (!formData.email || !formData.address || !formData.phone) {
-        toast.error("Please fill in required fields");
-        return;
+      toast.error("Please fill in required fields");
+      return;
     }
 
-    // HERE YOU WILL INTEGRATE RAZORPAY LATER
-    console.log("Processing Order:", {
-      items: cartItems,
-      customer: formData,
-      totals: calculations,
-      coupon: couponData
-    });
-    
-    toast.success("Redirecting to Payment Gateway...");
+    try {
+      setIsPaying(true);
+
+      // 1) Create order on backend (send cart lines + address/phone)
+      const orderResp = await orderService.createOrder({
+        address: formData.address,
+        phone: formData.phone,
+        items: cartItems.map((item) => ({
+          sku: item.sku,
+          size: item.size,
+          quantity: item.quantity,
+        })),
+      });
+
+      // 2) Ensure Razorpay script is available
+      const Razorpay = (window as any).Razorpay;
+      if (!Razorpay) {
+        toast.error("Payment SDK not loaded. Please refresh and try again.");
+        setIsPaying(false);
+        return;
+      }
+
+      // 3) Launch Razorpay widget
+      const options: any = {
+        key: orderResp.key,
+        amount: orderResp.amount, // in paise
+        currency: orderResp.currency,
+        order_id: orderResp.razorpay_order_id,
+        name: "Vinsaraa Collections",
+        description: "Order Payment",
+        prefill: {
+          email: formData.email,
+          contact: formData.phone,
+          name: `${formData.firstName} ${formData.lastName}`,
+        },
+        handler: async function (response: any) {
+          try {
+            await orderService.verifyPayment({
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+            });
+            toast.success("Payment successful!");
+            clearCart();
+            navigate("/"); // Redirect after success (adjust as needed)
+          } catch (err: any) {
+            toast.error(err?.error || "Payment verification failed");
+          } finally {
+            setIsPaying(false);
+          }
+        },
+        modal: {
+          ondismiss: () => {
+            setIsPaying(false);
+          },
+        },
+        theme: { color: "#000000" },
+      };
+
+      const rzp = new Razorpay(options);
+      rzp.open();
+    } catch (error: any) {
+      toast.error(error?.error || "Could not start payment");
+      setIsPaying(false);
+    }
   };
 
   if (loadingConfig) {
@@ -322,9 +385,10 @@ const Checkout = () => {
               {/* Submit Button */}
               <button
                 onClick={handlePayment}
-                className="w-full bg-gray-900 text-white py-3 sm:py-4 rounded-md font-medium hover:bg-gray-800 transition-colors text-base sm:text-lg"
+                disabled={isPaying}
+                className="w-full bg-gray-900 text-white py-3 sm:py-4 rounded-md font-medium hover:bg-gray-800 transition-colors text-base sm:text-lg disabled:opacity-70 disabled:cursor-not-allowed"
               >
-                Pay now
+                {isPaying ? "Processing..." : "Pay now"}
               </button>
             </div>
           </div>
