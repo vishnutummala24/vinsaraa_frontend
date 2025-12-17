@@ -6,7 +6,7 @@ import { storeService, orderService } from "@/services/api";
 import { toast } from "sonner";
 
 const Checkout = () => {
-  const { cartItems, cartTotal, clearCart } = useCart(); // cartTotal here is SUBTOTAL
+  const { cartItems, cartTotal } = useCart(); // cartTotal here is SUBTOTAL
   const navigate = useNavigate();
 
   // --- STATE MANAGEMENT ---
@@ -180,7 +180,6 @@ const Checkout = () => {
               razorpay_signature: response.razorpay_signature,
             });
             toast.success("Payment successful!");
-            clearCart();
             navigate("/"); // Redirect after success (adjust as needed)
           } catch (err: any) {
             toast.error(err?.error || "Payment verification failed");
