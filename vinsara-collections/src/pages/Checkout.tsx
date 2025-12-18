@@ -87,8 +87,41 @@ const Checkout = () => {
     };
   }, [cartTotal, config, couponData]);
 
-  // --- HANDLERS ---
+  // --- Helper: load Razorpay SDK dynamically (safe even if already loaded) ---
+  const loadRazorpayScript = (): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      if ((window as any).Razorpay) {
+        return resolve();
+      }
+      const script = document.createElement("script");
+      script.src = "https://checkout.razorpay.com/v1/checkout.js";
+      script.async = true;
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error("Razorpay SDK failed to load"));
+      document.body.appendChild(script);
+    });
+  };
 
+  // Poll order status via backend (useful as webhook confirmation fallback)
+  const pollOrderStatus = async (orderId: string, attempts = 0): Promise<boolean> => {
+    try {
+      if (!orderId) return false;
+      const resp = await orderService.getOrderStatus(orderId);
+      const status = resp?.payment_status || resp?.status || "";
+      if (status && status.toLowerCase() === "paid") return true;
+
+      if (attempts >= 12) return false; // about 1 minute (12 * 5s)
+      await new Promise((r) => setTimeout(r, 5000));
+      return pollOrderStatus(orderId, attempts + 1);
+    } catch (err) {
+      // Ignore transient errors and retry a few times
+      if (attempts >= 12) return false;
+      await new Promise((r) => setTimeout(r, 5000));
+      return pollOrderStatus(orderId, attempts + 1);
+    }
+  };
+
+  // --- HANDLERS ---
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({
       ...formData,
@@ -101,12 +134,12 @@ const Checkout = () => {
       toast.error("Please enter a coupon code");
       return;
     }
-    
+
     try {
       setIsValidatingCoupon(true);
       // Validate against backend
       const response = await storeService.validateCoupon(discountCode, cartTotal);
-      
+
       if (response.success) {
         setCouponData(response);
         toast.success(response.message || "Coupon applied!");
@@ -151,10 +184,21 @@ const Checkout = () => {
         })),
       });
 
+      // Extract order id for polling (backend should return this)
+      const frontendOrderId = orderResp.order_id || orderResp.id || null;
+
       // 2) Ensure Razorpay script is available
+      try {
+        await loadRazorpayScript();
+      } catch (err) {
+        toast.error("Payment SDK not loaded. Please refresh and try again.");
+        setIsPaying(false);
+        return;
+      }
+
       const Razorpay = (window as any).Razorpay;
       if (!Razorpay) {
-        toast.error("Payment SDK not loaded. Please refresh and try again.");
+        toast.error("Payment SDK not available. Please refresh and try again.");
         setIsPaying(false);
         return;
       }
@@ -174,15 +218,31 @@ const Checkout = () => {
         },
         handler: async function (response: any) {
           try {
+            // Call backend verify (immediate verification)
             await orderService.verifyPayment({
               razorpay_order_id: response.razorpay_order_id,
               razorpay_payment_id: response.razorpay_payment_id,
               razorpay_signature: response.razorpay_signature,
             });
-            toast.success("Payment successful!");
+
+            // Start polling for webhook-confirmed status (webhook is authoritative)
+            if (frontendOrderId) {
+              const confirmed = await pollOrderStatus(frontendOrderId);
+              if (confirmed) {
+                toast.success("Payment confirmed.");
+              } else {
+                toast.success("Payment recorded — confirmation may take a moment.");
+              }
+            } else {
+              // No frontend order id returned; still treat as success but recommend backend webhook check
+              toast.success("Payment successful (no order id to poll).");
+            }
+
             navigate("/"); // Redirect after success (adjust as needed)
           } catch (err: any) {
-            toast.error(err?.error || "Payment verification failed");
+            // If verify endpoint failed but payment still captured, webhook should still mark it — inform user
+            const message = err?.error || "Payment verification failed. We'll confirm shortly.";
+            toast.error(message);
           } finally {
             setIsPaying(false);
           }
