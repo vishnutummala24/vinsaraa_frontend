@@ -124,7 +124,7 @@ const Checkout = () => {
   const pollOrderStatus = async (orderId: string, attempts = 0): Promise<boolean> => {
     try {
       if (!orderId) return false;
-      const resp = await orderService.getOrderStatus(orderId);
+      const resp = await orderService.getOrderDetails(orderId);
       const status = resp?.payment_status || resp?.status || "";
       if (status && status.toLowerCase() === "paid") return true;
 

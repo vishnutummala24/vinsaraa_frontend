@@ -320,7 +320,7 @@ const ProductDetail = () => {
                 </div>
                 {selectedSize && (
                   <p className="text-xs text-green-600 font-medium">
-                    ✅ {selectedSize} selected - {product.variants?.find((v: any) => v.size === selectedSize)?.stock} in stock
+                    ✅ {selectedSize} selected 
                   </p>
                 )}
               </div>

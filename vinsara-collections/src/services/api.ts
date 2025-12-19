@@ -79,7 +79,6 @@ export const authService = {
     return response.data;
   },
 
-  // ✅ MOVED HERE & RENAMED (savAddress -> saveAddress)
   getSavedAddresses: async () => {
     const response = await api.get('/auth/addresses/');
     return response.data;
@@ -136,7 +135,8 @@ export const orderService = {
     return response.data;
   },
 
-  getOrderStatus: async (orderId: string) => {
+  // ✅ RENAMED from getOrderStatus to getOrderDetails to match your new component
+  getOrderDetails: async (orderId: string | number) => {
     const response = await api.get(`/orders/${orderId}/status/`);
     return response.data;
   },
@@ -146,5 +146,18 @@ export const orderService = {
     const response = await api.get('/orders/');
     console.log('📥 Orders response:', response.data);
     return response.data;
+  },
+
+  // ✅ RENAMED from updateStatus to updateOrderStatus to match your new component
+  updateOrderStatus: async (orderId: number, newStatus: string) => {
+    // We use 'api.patch' so the token header is added automatically by your interceptor
+    const response = await api.patch(`/orders/${orderId}/update-status/`, { 
+      order_status: newStatus 
+    });
+    return response.data;
   }
 };
+
+// ✅ ADDED: Named exports to support your OrderHistory.tsx imports
+// This allows: import { getUserOrders, updateOrderStatus } from '../services/api';
+export const { getUserOrders, getOrderDetails, updateOrderStatus } = orderService;
