@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo } from "react";
 import { useCart } from "@/pages/CartContext";
 import { ChevronDown, Info, Loader2 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
-import { storeService, orderService } from "@/services/api";
+// 1. FIXED: Added authService to imports
+import { storeService, orderService, authService } from "@/services/api";
 import { toast } from "sonner";
 
 const Checkout = () => {
@@ -18,11 +19,13 @@ const Checkout = () => {
   });
 
   const [discountCode, setDiscountCode] = useState("");
-  const [couponData, setCouponData] = useState<any>(null); // To store applied coupon info
+  const [couponData, setCouponData] = useState<any>(null);
   const [isValidatingCoupon, setIsValidatingCoupon] = useState(false);
 
   const [saveInfo, setSaveInfo] = useState(false);
   const [isPaying, setIsPaying] = useState(false);
+  const [savedAddresses, setSavedAddresses] = useState<any[]>([]);
+  // const [showSavedAddresses, setShowSavedAddresses] = useState(false); // Unused, commented out
 
   const [formData, setFormData] = useState({
     email: "",
@@ -37,12 +40,28 @@ const Checkout = () => {
     country: "India"
   });
 
+  // --- FETCH SAVED ADDRESSES ---
+  useEffect(() => {
+    const fetchAddresses = async () => {
+      try {
+        const data = await authService.getSavedAddresses();
+        setSavedAddresses(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error("Failed to load saved addresses", err);
+      }
+    };
+
+    const token = localStorage.getItem("userToken");
+    if (token) {
+      fetchAddresses();
+    }
+  }, []);
+
   // --- FETCH CONFIGURATION (Shipping/Tax) ---
   useEffect(() => {
     const fetchConfig = async () => {
       try {
         const data = await storeService.getSiteConfig();
-        // Backend returns strings for decimals, parse them to floats
         setConfig({
           shipping_flat_rate: parseFloat(data.shipping_flat_rate),
           shipping_free_above: parseFloat(data.shipping_free_above),
@@ -67,11 +86,10 @@ const Checkout = () => {
     // 2. Discount
     let discountAmount = 0;
     if (couponData) {
-      discountAmount = couponData.discount; // Backend calculates the exact amount
+      discountAmount = couponData.discount;
     }
 
-    // 3. Tax (Calculated on discounted subtotal? usually Tax is on taxable value)
-    // Let's assume Tax is on (Subtotal - Discount)
+    // 3. Tax (Assuming Tax is on Taxable Amount)
     const taxableAmount = Math.max(0, cartTotal - discountAmount);
     const taxAmount = (taxableAmount * config.tax_rate_percentage) / 100;
 
@@ -87,7 +105,7 @@ const Checkout = () => {
     };
   }, [cartTotal, config, couponData]);
 
-  // --- Helper: load Razorpay SDK dynamically (safe even if already loaded) ---
+  // --- Helper: load Razorpay SDK ---
   const loadRazorpayScript = (): Promise<void> => {
     return new Promise((resolve, reject) => {
       if ((window as any).Razorpay) {
@@ -102,7 +120,7 @@ const Checkout = () => {
     });
   };
 
-  // Poll order status via backend (useful as webhook confirmation fallback)
+  // Poll order status
   const pollOrderStatus = async (orderId: string, attempts = 0): Promise<boolean> => {
     try {
       if (!orderId) return false;
@@ -110,11 +128,10 @@ const Checkout = () => {
       const status = resp?.payment_status || resp?.status || "";
       if (status && status.toLowerCase() === "paid") return true;
 
-      if (attempts >= 12) return false; // about 1 minute (12 * 5s)
+      if (attempts >= 12) return false;
       await new Promise((r) => setTimeout(r, 5000));
       return pollOrderStatus(orderId, attempts + 1);
     } catch (err) {
-      // Ignore transient errors and retry a few times
       if (attempts >= 12) return false;
       await new Promise((r) => setTimeout(r, 5000));
       return pollOrderStatus(orderId, attempts + 1);
@@ -137,7 +154,6 @@ const Checkout = () => {
 
     try {
       setIsValidatingCoupon(true);
-      // Validate against backend
       const response = await storeService.validateCoupon(discountCode, cartTotal);
 
       if (response.success) {
@@ -145,7 +161,7 @@ const Checkout = () => {
         toast.success(response.message || "Coupon applied!");
       }
     } catch (error: any) {
-      setCouponData(null); // Reset if invalid
+      setCouponData(null);
       const msg = error.error || "Invalid coupon code";
       toast.error(msg);
     } finally {
@@ -165,7 +181,7 @@ const Checkout = () => {
       navigate("/user");
       return;
     }
-    if (!formData.email || !formData.address || !formData.phone) {
+    if (!formData.email || !formData.address || !formData.phone || !formData.firstName || !formData.city || !formData.pinCode) {
       toast.error("Please fill in required fields");
       return;
     }
@@ -173,21 +189,32 @@ const Checkout = () => {
     try {
       setIsPaying(true);
 
-      // 1) Create order on backend (send cart lines + address/phone)
-      const orderResp = await orderService.createOrder({
+      // --- 1) Create order on backend ---
+      const payload = {
+        first_name: formData.firstName,
+        last_name: formData.lastName,
+        email: formData.email,
         address: formData.address,
+        apartment: formData.apartment || "",
+        city: formData.city,
+        state: formData.state,
+        zip_code: formData.pinCode,
         phone: formData.phone,
+        country: formData.country,
+        save_info: saveInfo,
         items: cartItems.map((item) => ({
           sku: item.sku,
+          variant_id: (item as any).variant_id || item.id,
           size: item.size,
           quantity: item.quantity,
+          price: item.price
         })),
-      });
+      };
 
-      // Extract order id for polling (backend should return this)
+      const orderResp = await orderService.createOrder(payload);
       const frontendOrderId = orderResp.order_id || orderResp.id || null;
 
-      // 2) Ensure Razorpay script is available
+      // 2) Load SDK
       try {
         await loadRazorpayScript();
       } catch (err) {
@@ -203,10 +230,10 @@ const Checkout = () => {
         return;
       }
 
-      // 3) Launch Razorpay widget
+      // 3) Launch Razorpay
       const options: any = {
         key: orderResp.key,
-        amount: orderResp.amount, // in paise
+        amount: orderResp.amount,
         currency: orderResp.currency,
         order_id: orderResp.razorpay_order_id,
         name: "Vinsaraa Collections",
@@ -218,32 +245,48 @@ const Checkout = () => {
         },
         handler: async function (response: any) {
           try {
-            // Call backend verify (immediate verification)
+            // A. Verify Payment
             await orderService.verifyPayment({
               razorpay_order_id: response.razorpay_order_id,
               razorpay_payment_id: response.razorpay_payment_id,
               razorpay_signature: response.razorpay_signature,
             });
 
-            // Start polling for webhook-confirmed status (webhook is authoritative)
-            if (frontendOrderId) {
-              const confirmed = await pollOrderStatus(frontendOrderId);
-              if (confirmed) {
-                toast.success("Payment confirmed.");
-              } else {
-                toast.success("Payment recorded — confirmation may take a moment.");
+            // B. SAVE ADDRESS (Logic inserted here as requested)
+            if (saveInfo) {
+              try {
+                // Note: Ensure the method name in your api.js is 'saveAddress'
+                await authService.saveAddress({
+                  label: 'Saved Address',
+                  address: formData.address,
+                  apartment: formData.apartment,
+                  city: formData.city,
+                  state: formData.state,
+                  zip_code: formData.pinCode,
+                  country: formData.country,
+                  phone: formData.phone,
+                  is_default: false,
+                });
+              } catch (err) {
+                console.error("Failed to save address", err);
+                // We don't block the order success if saving address fails
               }
-            } else {
-              // No frontend order id returned; still treat as success but recommend backend webhook check
-              toast.success("Payment successful (no order id to poll).");
             }
 
-            navigate("/"); // Redirect after success (adjust as needed)
+            // C. Clear Cart & Redirect
+            localStorage.removeItem('cart');
+            toast.success("Payment successful! Redirecting to orders...");
+
+            setTimeout(() => {
+              navigate("/user");
+            }, 1500);
+
+            if (frontendOrderId) {
+              pollOrderStatus(frontendOrderId).catch(console.error);
+            }
           } catch (err: any) {
-            // If verify endpoint failed but payment still captured, webhook should still mark it — inform user
             const message = err?.error || "Payment verification failed. We'll confirm shortly.";
             toast.error(message);
-          } finally {
             setIsPaying(false);
           }
         },
@@ -258,7 +301,8 @@ const Checkout = () => {
       const rzp = new Razorpay(options);
       rzp.open();
     } catch (error: any) {
-      toast.error(error?.error || "Could not start payment");
+      console.error("Payment Start Error:", error);
+      toast.error(error?.error || "Could not start payment. Check your address details.");
       setIsPaying(false);
     }
   };
@@ -307,6 +351,35 @@ const Checkout = () => {
                 />
               </div>
 
+              {/* Saved Addresses Section (Placed above delivery form) */}
+              {savedAddresses.length > 0 && (
+                <div className="p-3 bg-blue-50 rounded-md border border-blue-200">
+                  <p className="text-xs font-medium mb-2 text-blue-900">Quick Select Saved Addresses:</p>
+                  <div className="space-y-2">
+                    {savedAddresses.map((addr) => (
+                      <button
+                        key={addr.id}
+                        type="button"
+                        onClick={() => setFormData({
+                          ...formData,
+                          address: addr.address,
+                          apartment: addr.apartment,
+                          city: addr.city,
+                          state: addr.state,
+                          pinCode: addr.zip_code,
+                          phone: addr.phone,
+                          country: addr.country,
+                        })}
+                        className="w-full text-left p-2 bg-white border border-blue-200 rounded hover:border-blue-400 transition-colors text-xs"
+                      >
+                        <p className="font-medium">{addr.label}</p>
+                        <p className="text-gray-600">{addr.address}, {addr.city}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Delivery Section */}
               <div>
                 <h2 className="text-lg sm:text-xl font-semibold mb-3 sm:mb-4">Delivery</h2>
@@ -319,7 +392,6 @@ const Checkout = () => {
                       className="w-full px-3 sm:px-4 py-2.5 sm:py-3 text-sm sm:text-base border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white cursor-pointer"
                     >
                       <option value="India">India</option>
-                      {/* Add other countries if needed */}
                     </select>
                     <label className="absolute -top-2 left-2 sm:left-3 px-1 bg-white text-xs text-gray-600">
                       Country/Region
@@ -383,13 +455,12 @@ const Checkout = () => {
                         onChange={handleInputChange}
                         className="w-full px-2 sm:px-4 py-2.5 sm:py-3 text-xs sm:text-base border border-gray-300 rounded-md bg-white cursor-pointer"
                       >
-                         <option value="Andhra Pradesh">Andhra Pradesh</option>
-                         <option value="Telangana">Telangana</option>
-                         <option value="Karnataka">Karnataka</option>
-                         <option value="Tamil Nadu">Tamil Nadu</option>
-                         <option value="Maharashtra">Maharashtra</option>
-                         <option value="Delhi">Delhi</option>
-                         {/* Add rest of states */}
+                        <option value="Andhra Pradesh">Andhra Pradesh</option>
+                        <option value="Telangana">Telangana</option>
+                        <option value="Karnataka">Karnataka</option>
+                        <option value="Tamil Nadu">Tamil Nadu</option>
+                        <option value="Maharashtra">Maharashtra</option>
+                        <option value="Delhi">Delhi</option>
                       </select>
                     </div>
                     <input
@@ -422,18 +493,17 @@ const Checkout = () => {
                       onChange={(e) => setSaveInfo(e.target.checked)}
                       className="w-4 h-4 mt-0.5 sm:mt-0 text-blue-600 border-gray-300 rounded"
                     />
-                    <span className="ml-2 text-xs sm:text-sm text-gray-600">Save this information for next time</span>
+                    <span className="ml-2 text-xs sm:text-sm text-gray-600">Save this address for next time</span>
                   </label>
                 </div>
               </div>
-
+              
               {/* Payment Info Box */}
               <div>
                 <h2 className="text-lg sm:text-xl font-semibold mb-2">Payment</h2>
                 <div className="border border-gray-300 rounded-md">
                   <div className="p-3 sm:p-4 bg-blue-50 border-b border-gray-300 flex justify-between items-center">
                     <span className="text-sm font-medium">Razorpay Secure</span>
-                    {/* Add Icons here if needed */}
                   </div>
                   <div className="p-4 text-center bg-white text-sm text-gray-600">
                     After clicking "Pay now", you will be redirected to Razorpay.
@@ -488,7 +558,7 @@ const Checkout = () => {
                   placeholder="Discount code"
                   value={discountCode}
                   onChange={(e) => setDiscountCode(e.target.value)}
-                  disabled={couponData !== null} // Disable if applied
+                  disabled={couponData !== null}
                   className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 uppercase"
                 />
                 <button 

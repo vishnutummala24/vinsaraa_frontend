@@ -109,36 +109,46 @@ export default function Login() {
   };
 
   // --- GOOGLE LOGIN LOGIC ---
-  const googleLogin = useGoogleLogin({
-    onSuccess: async (tokenResponse) => {
-      try {
-        setIsLoading(true);
-        // We get a 'code' from Google, pass it to Django
-        const res = await authService.googleLogin({
-          code: tokenResponse.code,
-        });
+const googleLogin = useGoogleLogin({
+  onSuccess: async (tokenResponse) => {
+    try {
+      setIsLoading(true);
+      console.log('✅ Google auth successful');
+      const res = await authService.googleLogin({
+        code: tokenResponse.code,
+      });
 
-        // Django returns the standard key/token
-        const token = res.key || res.access || res.token;
-        if (token) {
-           localStorage.setItem("userToken", token);
-           toast.success("Logged in with Google!");
-           navigate("/user");
-        }
-      } catch (err) {
-        console.error("Google Auth Failed", err);
-        toast.error("Google Login failed. Please try again.");
-      } finally {
-        setIsLoading(false);
+      console.log('📥 Full auth response:', res);
+      const token = res.key || res.access || res.token;
+      console.log('🔑 Extracted token:', token ? 'YES (length: ' + token.length + ')' : 'NO');
+      
+      if (token) {
+        console.log('💾 Saving token to localStorage with key "userToken"');
+        localStorage.setItem("userToken", token);
+        console.log('✅ Token saved. Checking localStorage:', localStorage.getItem('userToken') ? 'FOUND' : 'NOT FOUND');
+        toast.success("Logged in with Google!");
+        navigate("/user");
+      } else {
+        console.error('❌ No token in response. Response keys:', Object.keys(res));
+        toast.error("Login failed: No token received");
       }
-    },
-    onError: () => {
-      toast.error("Google Login Failed");
+    } catch (err) {
+      console.error("Google Auth Failed", err);
+      toast.error("Google Login failed. Please try again.");
+    } finally {
       setIsLoading(false);
-    },
-    flow: 'auth-code', // Important for Django backend exchange
-  });
+    }
+  },
+  onError: () => {
+    toast.error("Google Login Failed");
+    setIsLoading(false);
+  },
+  flow: 'auth-code',
+});
 
+        
+
+       
   return (
     <div className="min-h-screen bg-white flex">
       {/* Left Side - Form */}

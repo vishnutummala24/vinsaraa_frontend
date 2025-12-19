@@ -281,7 +281,7 @@ const ProductDetail = () => {
                 <p className="text-sm text-muted-foreground">Inclusive of all Taxes.</p>
               </div>
 
-              {/* Size Selector */}
+                            {/* Size Selector */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium tracking-wider text-foreground">SIZE</span>
@@ -294,20 +294,35 @@ const ProductDetail = () => {
                   </button>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {product.variants?.map((variant: any) => (
-                    <button
-                      key={variant.id || variant.size}
-                      onClick={() => setSelectedSize(variant.size)}
-                      className={`min-w-[48px] px-4 py-2.5 text-sm font-medium border transition-all ${
-                        selectedSize === variant.size
-                          ? "border-foreground bg-foreground text-background"
-                          : "border-border hover:border-foreground text-foreground"
-                      }`}
-                    >
-                      {variant.size}
-                    </button>
-                  ))}
+                  {product.variants?.map((variant: any) => {
+                    const isOutOfStock = variant.stock === 0;
+                    const isSelected = selectedSize === variant.size;
+                    
+                    return (
+                      <button
+                        key={variant.id || variant.size}
+                        onClick={() => !isOutOfStock && setSelectedSize(variant.size)}
+                        disabled={isOutOfStock}
+                        className={`min-w-[48px] px-4 py-2.5 text-sm font-medium border transition-all ${
+                          isOutOfStock
+                            ? "border-border text-muted-foreground line-through opacity-50 cursor-not-allowed"
+                            : isSelected
+                            ? "border-foreground bg-foreground text-background"
+                            : "border-border hover:border-foreground text-foreground"
+                        }`}
+                        title={isOutOfStock ? `${variant.size} - Out of Stock` : undefined}
+                      >
+                        {variant.size}
+                        {isOutOfStock && <span className="ml-1 text-xs">(0)</span>}
+                      </button>
+                    );
+                  })}
                 </div>
+                {selectedSize && (
+                  <p className="text-xs text-green-600 font-medium">
+                    ✅ {selectedSize} selected - {product.variants?.find((v: any) => v.size === selectedSize)?.stock} in stock
+                  </p>
+                )}
               </div>
 
               {/* Quantity */}
