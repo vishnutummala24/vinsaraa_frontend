@@ -7,8 +7,8 @@ const NewArrivals = () => {
   const [products, setProducts] = useState<any[]>([]);
 
   useEffect(() => {
-    storeService.getProducts({ is_new: true }) // Fetch only new items
-      .then(data => setProducts(data.slice(0, 5))) // Limit to 5
+    storeService.getProducts({ is_new: true }) 
+      .then(data => setProducts(data.slice(0, 10))) // ✅ CHANGED to 10
       .catch(err => console.error("New arrivals failed", err));
   }, []);
 
@@ -25,10 +25,11 @@ const NewArrivals = () => {
           {products.map((product, index) => (
             <ProductCard
               key={product.id}
-              id={product.slug} // Use slug for links
+              id={product.slug}
               image={product.images[0]}
               title={product.title}
               price={parseFloat(product.price)}
+              originalPrice={parseFloat(product.originalPrice || 0)}
               sizes={product.variants?.map((v:any) => v.size) || []}
               index={index}
             />

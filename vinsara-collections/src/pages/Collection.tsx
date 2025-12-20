@@ -1,35 +1,30 @@
 import { motion } from "framer-motion";
 import { useState, useMemo, useEffect } from "react";
-import { useParams, Link } from "react-router-dom"; // Import useParams
+import { useParams } from "react-router-dom";
 import { Search, SlidersHorizontal, X, Loader2 } from "lucide-react";
 
 import ProductCard from "@/components/ProductCard";
-import { storeService } from "@/services/api"; // Import your API service
+import { storeService } from "@/services/api";
 
 const Collection = () => {
-  // 1. Get the category slug from the URL (e.g., 'sleeved')
   const { categorySlug } = useParams<{ categorySlug: string }>();
   
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // Filter States
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("newest");
   const [showFilters, setShowFilters] = useState(false);
   const [priceRange, setPriceRange] = useState({ min: "", max: "" });
   const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
 
-  // 2. Fetch Data when the Category changes
   useEffect(() => {
     const fetchCategoryProducts = async () => {
       try {
         setLoading(true);
-        // Pass the slug to your backend API
         const data = await storeService.getProducts({ category: categorySlug });
         setProducts(data);
         
-        // Reset filters when changing categories
         setSearchQuery("");
         setSelectedSizes([]);
         setPriceRange({ min: "", max: "" });
@@ -45,11 +40,9 @@ const Collection = () => {
     }
   }, [categorySlug]);
 
-  // 3. Get unique sizes dynamically from fetched products
   const availableSizes = useMemo(() => {
     const sizes = new Set();
     products.forEach(product => {
-      // Check both 'sizes' array (old) and 'variants' (new)
       const variants = product.variants || []; 
       if (variants.length > 0) {
          variants.forEach((v: any) => sizes.add(v.size));
@@ -60,11 +53,9 @@ const Collection = () => {
     return Array.from(sizes).sort();
   }, [products]);
 
-  // 4. Client-side Filtering & Sorting Logic
   const filteredProducts = useMemo(() => {
     let filtered = [...products];
 
-    // Search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(product =>
@@ -72,7 +63,6 @@ const Collection = () => {
       );
     }
 
-    // Price range filter
     if (priceRange.min) {
       filtered = filtered.filter(product => parseFloat(product.price) >= Number(priceRange.min));
     }
@@ -80,7 +70,6 @@ const Collection = () => {
       filtered = filtered.filter(product => parseFloat(product.price) <= Number(priceRange.max));
     }
 
-    // Size filter
     if (selectedSizes.length > 0) {
       filtered = filtered.filter(product => {
         const pSizes = product.variants?.map((v:any) => v.size) || product.sizes || [];
@@ -88,7 +77,6 @@ const Collection = () => {
       });
     }
 
-    // Sorting
     switch (sortBy) {
       case "price-low":
         filtered.sort((a, b) => parseFloat(a.price) - parseFloat(b.price));
@@ -134,7 +122,6 @@ const Collection = () => {
       <main className="pt-24 md:pt-32 pb-16">
         <div className="container mx-auto px-4">
           
-          {/* Dynamic Header */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -148,10 +135,8 @@ const Collection = () => {
             </p>
           </motion.div>
 
-          {/* Search and Filter Bar */}
           <div className="mb-8 space-y-4">
             <div className="flex flex-col md:flex-row gap-4">
-              {/* Search Bar */}
               <div className="flex-1 relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                 <input
@@ -171,7 +156,6 @@ const Collection = () => {
                 )}
               </div>
 
-              {/* Filter Buttons */}
               <div className="flex gap-2">
                 <button
                   onClick={() => setShowFilters(!showFilters)}
@@ -204,7 +188,6 @@ const Collection = () => {
               </div>
             </div>
 
-            {/* Expanded Filter Panel */}
             {showFilters && (
               <motion.div
                 initial={{ opacity: 0, height: 0 }}
@@ -222,7 +205,6 @@ const Collection = () => {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Price Range */}
                   <div className="w-full">
                     <label className="block text-sm font-medium text-foreground mb-3">Price Range</label>
                     <div className="flex items-center gap-3">
@@ -244,7 +226,6 @@ const Collection = () => {
                     </div>
                   </div>
 
-                  {/* Size Filter */}
                   <div className="w-full">
                     <label className="block text-sm font-medium text-foreground mb-3">Sizes</label>
                     <div className="flex flex-wrap gap-2">
@@ -268,16 +249,17 @@ const Collection = () => {
             )}
           </div>
 
-          {/* Products Grid */}
           {filteredProducts.length > 0 ? (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6">
               {filteredProducts.map((product, index) => (
                 <ProductCard
                   key={product.id}
-                  id={product.slug} // Use slug for navigation
+                  id={product.slug} 
                   image={product.images?.[0] || ""}
                   title={product.title}
                   price={parseFloat(product.price)}
+                  // ✅ ADDED: originalPrice for discounts
+                  originalPrice={parseFloat(product.originalPrice || 0)}
                   sizes={product.variants?.map((v:any) => v.size) || product.sizes || []}
                   index={index}
                 />

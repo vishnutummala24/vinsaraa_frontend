@@ -1,13 +1,10 @@
 import { motion } from "framer-motion";
 import { useState, useMemo, useEffect } from "react";
-import { Search, SlidersHorizontal, X, Loader2 } from "lucide-react";
-import { Link } from "react-router-dom"; // Added for linking cards
-
+import { Search, SlidersHorizontal, Loader2, ChevronLeft, ChevronRight } from "lucide-react"; 
 import ProductCard from "@/components/ProductCard";
-import { storeService } from "@/services/api"; // <--- IMPORT SERVICE
+import { storeService } from "@/services/api";
 
 const AllProducts = () => {
-  // 1. REPLACE STATIC DATA WITH STATE
   const [allProducts, setAllProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -17,7 +14,10 @@ const AllProducts = () => {
   const [priceRange, setPriceRange] = useState({ min: "", max: "" });
   const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
 
-  // 2. FETCH DATA FROM DJANGO ON MOUNT
+  // PAGINATION STATE
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 12;
+
   useEffect(() => {
     const fetchProducts = async () => {
       try {
@@ -32,11 +32,13 @@ const AllProducts = () => {
     fetchProducts();
   }, []);
 
-  // Get unique sizes dynamically from fetched products
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, priceRange, selectedSizes, sortBy]);
+
   const availableSizes = useMemo(() => {
     const sizes = new Set();
     allProducts.forEach(product => {
-      // Backend serializer sends 'sizes' as an array of strings ["S", "M"]
       if (product.sizes && Array.isArray(product.sizes)) {
         product.sizes.forEach((size: string) => {
           if (size) sizes.add(size);
@@ -46,7 +48,6 @@ const AllProducts = () => {
     return Array.from(sizes).sort();
   }, [allProducts]);
 
-  // Filter and sort products (Client-side logic remains same)
   const filteredProducts = useMemo(() => {
     let filtered = [...allProducts];
 
@@ -82,12 +83,21 @@ const AllProducts = () => {
         filtered.sort((a, b) => a.title.localeCompare(b.title));
         break;
       default:
-        // 'newest' is default sort from backend, so we don't strictly need logic here
         break;
     }
 
     return filtered;
   }, [allProducts, searchQuery, sortBy, priceRange, selectedSizes]);
+
+  const totalPages = Math.ceil(filteredProducts.length / ITEMS_PER_PAGE);
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = startIndex + ITEMS_PER_PAGE;
+  const currentProducts = filteredProducts.slice(startIndex, endIndex);
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const toggleSize = (size: string) => {
     setSelectedSizes(prev =>
@@ -116,7 +126,6 @@ const AllProducts = () => {
     <div className="min-h-screen bg-background">
       <main className="pt-24 md:pt-32 pb-16">
         <div className="container mx-auto px-4">
-          {/* Header */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -131,13 +140,7 @@ const AllProducts = () => {
             </p>
           </motion.div>
 
-          {/* ... (Search and Filter Bar UI - Exact same as before) ... */}
-          {/* I am omitting the UI boilerplate to save space, paste your previous UI code here for the Search/Filter bars */}
-          
           <div className="mb-8 space-y-4">
-             {/* PASTE YOUR SEARCH/FILTER UI CODE HERE (lines 104-232 from your original file) */}
-             {/* Ensure you use the handlers defined above: setSearchQuery, setShowFilters, etc. */}
-             {/* Key change: Ensure the onClick for Filter Toggle works */}
              <div className="flex flex-col md:flex-row gap-4">
                   <div className="flex-1 relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
@@ -148,44 +151,147 @@ const AllProducts = () => {
                       onChange={(e) => setSearchQuery(e.target.value)}
                       className="w-full pl-11 pr-4 py-3 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-foreground/20 transition-all"
                     />
-                     {/* ... rest of search bar ... */}
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={() => setShowFilters(!showFilters)} className="flex items-center gap-2 px-4 py-3 border rounded-lg text-sm font-medium">
+                    <button onClick={() => setShowFilters(!showFilters)} className={`flex items-center gap-2 px-4 py-3 border rounded-lg text-sm font-medium transition-all ${showFilters || hasActiveFilters ? "bg-black text-white border-black" : "bg-white hover:border-black"}`}>
                         <SlidersHorizontal className="w-4 h-4" /> Filters
                     </button>
-                    {/* ... Sort select ... */}
+                    
+                    <select
+                      value={sortBy}
+                      onChange={(e) => setSortBy(e.target.value)}
+                      className="bg-white border border-border px-4 py-3 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-black/10 transition-all cursor-pointer"
+                    >
+                      <option value="newest">Newest</option>
+                      <option value="price-low">Price: Low to High</option>
+                      <option value="price-high">Price: High to Low</option>
+                      <option value="name">Name: A-Z</option>
+                    </select>
                   </div>
              </div>
+
+             {/* ✅ FILTERS UI: Fully Implemented */}
              {showFilters && (
-                 /* ... Filter Panel UI ... */
-                 <div className="bg-muted/30 border border-border rounded-lg p-6">
-                    {/* ... Price/Size inputs ... */}
+                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 space-y-6 animate-in slide-in-from-top-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="font-medium text-gray-900">Filter Options</h3>
+                      {hasActiveFilters && (
+                        <button onClick={clearFilters} className="text-sm text-gray-500 hover:text-black underline">
+                          Clear all
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        {/* Price Range Inputs */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-3">Price Range</label>
+                            <div className="flex items-center gap-3">
+                                <input
+                                    type="number"
+                                    placeholder="Min"
+                                    value={priceRange.min}
+                                    onChange={(e) => setPriceRange({ ...priceRange, min: e.target.value })}
+                                    className="w-full px-4 py-2 border rounded-md text-sm focus:outline-none focus:border-black"
+                                />
+                                <span className="text-gray-400">-</span>
+                                <input
+                                    type="number"
+                                    placeholder="Max"
+                                    value={priceRange.max}
+                                    onChange={(e) => setPriceRange({ ...priceRange, max: e.target.value })}
+                                    className="w-full px-4 py-2 border rounded-md text-sm focus:outline-none focus:border-black"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Size Selection */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-3">Sizes</label>
+                            <div className="flex flex-wrap gap-2">
+                                {availableSizes.map((size: any) => (
+                                    <button
+                                        key={size}
+                                        onClick={() => toggleSize(size)}
+                                        className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
+                                            selectedSizes.includes(size)
+                                                ? "bg-black text-white border-black"
+                                                : "bg-white text-gray-700 border-gray-300 hover:border-black"
+                                        }`}
+                                    >
+                                        {size}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
                  </div>
              )}
           </div>
 
-          {/* Products Grid */}
           {filteredProducts.length > 0 ? (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.4 }}
-              className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6"
-            >
-              {filteredProducts.map((product, index) => (
-                <ProductCard
-                  key={product.id}
-                  // IMPORTANT: Backend uses 'slug' for URLs, pass it here or use ID depending on route
-                  id={product.slug} // Passing slug as ID if you update routes, or keep ID
-                  image={product.images?.[0] || ""} // Backend returns array of URLs
-                  title={product.title}
-                  price={parseFloat(product.price)} // Ensure number
-                  sizes={product.sizes || []}
-                  index={index}
-                />
-              ))}
-            </motion.div>
+            <>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.4 }}
+                className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6"
+              >
+                {currentProducts.map((product, index) => (
+                  <ProductCard
+                    key={product.id}
+                    id={product.slug}
+                    image={product.images?.[0] || ""}
+                    title={product.title}
+                    price={parseFloat(product.price)}
+                    originalPrice={parseFloat(product.originalPrice || 0)}
+                    sizes={product.sizes || []}
+                    index={index}
+                  />
+                ))}
+              </motion.div>
+
+              {/* PAGINATION */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-center gap-2 mt-12">
+                  <button
+                    onClick={() => handlePageChange(currentPage - 1)}
+                    disabled={currentPage === 1}
+                    className="p-2 border rounded-full hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+
+                  <div className="flex gap-1">
+                    {Array.from({ length: totalPages }, (_, i) => i + 1)
+                      .filter(page => Math.abs(page - currentPage) <= 1 || page === 1 || page === totalPages)
+                      .map((page, i, arr) => (
+                        <div key={page} className="flex items-center">
+                           {i > 0 && arr[i-1] !== page - 1 && <span className="px-2 text-gray-400">...</span>}
+                           <button
+                            onClick={() => handlePageChange(page)}
+                            className={`w-10 h-10 rounded-full text-sm font-medium transition-colors ${
+                              currentPage === page
+                                ? "bg-black text-white"
+                                : "hover:bg-gray-100 text-gray-700"
+                            }`}
+                          >
+                            {page}
+                          </button>
+                        </div>
+                      ))}
+                  </div>
+
+                  <button
+                    onClick={() => handlePageChange(currentPage + 1)}
+                    disabled={currentPage === totalPages}
+                    className="p-2 border rounded-full hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                </div>
+              )}
+            </>
           ) : (
             <div className="text-center py-16">
               <p className="text-muted-foreground text-lg">No products found</p>
